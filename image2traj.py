@@ -20,19 +20,19 @@ to_pil = transforms.ToPILImage()
 class CNNRegression(nn.Module):
     def __init__(self):
         super(CNNRegression, self).__init__()
-        self.conv1 = nn.Conv2d(1, 32, kernel_size=3, padding=1)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
+        self.conv1 = nn.Conv2d(1, 64, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
         self.pool = nn.MaxPool2d(2, 2)
         self.fc1 = nn.Linear(64 * 7 * 7, 128)
         self.fc2 = nn.Linear(128, 2*12+2*12)  # Output layer with vector size 12 + variance
 
     def forward(self, x):
-        x = self.pool(torch.tanh(self.conv1(x)))
-        x = self.pool(torch.tanh(self.conv2(x)))
+        x = self.pool(torch.relu(self.conv1(x)))
+        x = self.pool(torch.relu(self.conv2(x)))
         # x = torch.tanh(self.conv1(x))
         # x = torch.tanh(self.conv2(x))
         x = torch.flatten(x, 1)
-        x = torch.tanh(self.fc1(x))
+        x = torch.relu(self.fc1(x))
         x = self.fc2(x)
         
         return x
@@ -97,6 +97,30 @@ def tr2image(tx,ty):
     for x,y in zip(X,Y):
         # print(x,y)
         image[np.int32(x-10):np.int32(x+11),np.int32(y-10):np.int32(y+11)] = (image[np.int32(x-10):np.int32(x+11),np.int32(y-10):np.int32(y+11)]+kernel)>0
+    # Define a kernel for dilation
+    # kernel = create_circle_kernel(10)
+
+    # Dilate the image
+    # image = cv2.dilate(image, kernel, iterations=1)
+    return image
+
+def tr2image_with_randomness(tx,ty):
+    w=280
+    h=280
+    image = np.zeros((w,h))
+    X = (w/2*tx+w/2).astype(np.int32).reshape(-1)
+    Y = (w/2*ty+w/2).astype(np.int32).reshape(-1)
+
+    image[(X,Y)] = 1.0
+    w = np.random.rand(4)*1.5+0.5
+    pressure = rbf2traj(w, len(tx))
+    for x,y,p in zip(X,Y,pressure):
+        # print(x,y)
+        pp = int(p*10)
+        try:
+            image[np.int32(x-pp):np.int32(x+pp+1),np.int32(y-pp):np.int32(y+pp+1)] = (image[np.int32(x-pp):np.int32(x+pp+1),np.int32(y-pp):np.int32(y+pp+1)]+create_circle_kernel(pp))>0
+        except:
+            pass
     # Define a kernel for dilation
     # kernel = create_circle_kernel(10)
 
@@ -329,7 +353,8 @@ class RandomDigitsDataset(Dataset):
             
             
             # generate image based on vector
-            input_image = tr2image(goal_traj_x, goal_traj_y)
+            # input_image = tr2image(goal_traj_x, goal_traj_y)
+            input_image = tr2image_with_randomness(goal_traj_x, goal_traj_y)
             input_image = cv2.resize(input_image, (28, 28), interpolation=cv2.INTER_AREA)
             # cv2.imshow('a',np.uint8(255*input_image))
             # cv2.waitKey()
@@ -373,7 +398,8 @@ def preprocess(x):
 def CD(s,r):
     # print('p started', s)
     while True:
-        dd = CustomDataset(s)
+        # dd = CustomDataset(s)
+        dd = RandomDigitsDataset(s)
         r.put(dd)
 
 # Save dataset
@@ -389,7 +415,7 @@ def load_dataset(filename):
 
 if __name__ == '__main__':
     transform=transforms.Compose([
-            transforms.Lambda(preprocess),
+            # transforms.Lambda(preprocess),
             transforms.ToTensor(),
             
             # transforms.Normalize((0.1307,), (0.3081,))
@@ -400,9 +426,9 @@ if __name__ == '__main__':
     dataset_size = 10000  # Choose your desired dataset size
     batch_size = 1000  # Choose batch size
 
-    test_dataset = RandomDigitsDataset(1000)
+    # test_dataset = RandomDigitsDataset(1000)
     
-    # test_dataset = datasets.MNIST(root='./mnist_data/', train=False, transform=transform, download=True)
+    test_dataset = datasets.MNIST(root='./mnist_data/', train=False, transform=transform, download=False)
     test_loader = torch.utils.data.DataLoader(dataset=test_dataset, batch_size=10, shuffle=False)
 
     dataset = CustomDataset(1000)
@@ -414,7 +440,7 @@ if __name__ == '__main__':
     optimizer = optim.Adam(model.parameters(), lr=3e-4)
 
     try:
-        
+        aa
         model.load_state_dict(torch.load('image_2_traj_model.pt'))
         
     except:
@@ -477,6 +503,7 @@ if __name__ == '__main__':
 
     with torch.no_grad():
         for inputs, targets in test_loader:
+            print(inputs.shape)
             outputs = model(inputs)
             output = outputs[0].numpy().reshape(-1)
             output = output[:12]
